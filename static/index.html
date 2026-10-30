@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f45b4f">
+  <title>Codingal Code Studio | Learning Intelligence</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><div class="brand-mark">c</div><div><strong>Codingal</strong><span>CODE STUDIO</span></div></div>
+      <div class="workspace-switcher"><div class="switcher-icon">✦</div><div class="switcher-copy"><strong>Learning workspace</strong><small>Teacher environment</small></div><span class="chevron">⌄</span></div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav class="nav-list">
+        <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span><span>Overview</span></button>
+        <button class="nav-item" data-page="learners"><span class="nav-icon">♧</span><span>Learner intelligence</span><span class="nav-count" id="learnerNavCount">—</span></button>
+        <button class="nav-item" data-page="insights"><span class="nav-icon">⌁</span><span>Class insights</span><span class="nav-dot"></span></button>
+        <button class="nav-item" data-page="collaboration"><span class="nav-icon">▤</span><span>Teacher collaboration</span><span class="nav-count" id="notesNavCount">—</span></button>
+        <button class="nav-item" data-page="assignments"><span class="nav-icon">☷</span><span>Assignments</span></button>
+      </nav>
+      <div class="nav-label nav-label-spaced">BUILD & REVIEW</div>
+      <nav class="nav-list">
+        <button class="nav-item" data-page="workspace"><span class="nav-icon">⌘</span><span>Code workspace</span></button>
+        <button class="nav-item" data-page="versions"><span class="nav-icon">⎇</span><span>Version history</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="stack-status"><span class="status-led"></span><div><strong>Local workspace</strong><small id="serverStatus">Checking services…</small></div></div>
+        <button class="profile-button" id="profileButton"><div class="profile-avatar">PS</div><div class="profile-copy"><strong>Priya Sharma</strong><small>Lead coding instructor</small></div><span class="chevron">···</span></button>
+      </div>
+    </aside>
+    <section class="main-column">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" id="mobileMenu" aria-label="Toggle navigation">☰</button>
+        <div class="breadcrumbs"><span>Workspace</span><span class="crumb-slash">/</span><strong id="currentBreadcrumb">Overview</strong></div>
+        <div class="topbar-right">
+          <div class="demo-chip"><span class="demo-pulse"></span> Demo data</div>
+          <button class="icon-button" id="helpButton" title="About this prototype">?</button>
+          <div class="top-avatar">PS</div>
+        </div>
+      </header>
+      <main id="app" class="page-content" aria-live="polite"><div class="loading-state"><div class="spinner"></div><span>Loading learning workspace…</span></div></main>
+      <footer class="app-footer"><span>CODINGAL CODE STUDIO</span><span>Learning intelligence · Teacher collaboration · Project continuity</span><span id="footerVersion">Standalone pilot v0.9</span></footer>
+    </section>
+  </div>
+  <div id="modalRoot"></div><div id="toastRoot" class="toast-stack" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
