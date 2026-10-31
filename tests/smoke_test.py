@@ -16,6 +16,14 @@ def get(path):
             raise AssertionError(f"{path}: unexpected HTTP {response.status}")
         return json.loads(response.read().decode("utf-8"))
 
+def post(path, data):
+    body = json.dumps(data).encode("utf-8")
+    req = urllib.request.Request(BASE + path, data=body, headers={"Accept": "application/json", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as response:
+        if response.status not in (200, 201):
+            raise AssertionError(f"{path}: unexpected HTTP {response.status}")
+        return json.loads(response.read().decode("utf-8"))
+
 checks = []
 health = get("/api/health")
 assert health.get("status") == "ok", health
@@ -43,4 +51,24 @@ project_id = projects["items"][0]["id"]
 versions = get(f"/api/projects/{project_id}/versions")
 assert "items" in versions
 checks.append("Git-backed project and version API")
+
+capabilities = get("/api/arena/capabilities")
+assert "gui_targets" in capabilities and len(capabilities["gui_targets"]) >= 3
+checks.append("arena capabilities API")
+
+templates = get("/api/arena/templates")
+assert "items" in templates and len(templates["items"]) >= 5
+checks.append("arena templates API")
+
+val = post("/api/arena/validate", {"language": "Python", "code": "print('hello')"})
+assert val.get("valid") is True
+checks.append("arena code validator")
+
+run_res = post("/api/arena/run", {
+    "language": "Python",
+    "code": "import turtle\nt = turtle.Turtle()\nt.forward(50)"
+})
+assert run_res.get("status") == "succeeded" and run_res.get("gui_target") == "turtle"
+checks.append("arena GUI execution (Turtle)")
+
 print(f"PASS: {len(checks)} smoke tests ({', '.join(checks)})")

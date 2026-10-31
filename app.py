@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -11,7 +12,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -20,6 +21,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import (Column, DateTime, Float, ForeignKey, Index, Integer, String, Text,
                         create_engine, event, func, select)
 from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
+
+from runner.arena_executor import detect_arena_target, execute_arena_code
+from runner.arena_templates import ARENA_TEMPLATES
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
@@ -230,9 +234,26 @@ class RestoreIn(BaseModel):
 
 class RunIn(BaseModel):
     language: str = Field(pattern="^(Python|Java|C\\+\\+|HTML/CSS/JS)$")
-    code: str = Field(max_length=25000)
-    stdin: str = Field(default="", max_length=3000)
+    code: str = Field(max_length=35000)
+    stdin: str = Field(default="", max_length=5000)
+    mode: Optional[str] = Field(default="auto", pattern="^(auto|console|gui)$")
+    gui_target: Optional[str] = Field(default="auto", pattern="^(auto|turtle|tkinter|pygame|web|none)$")
     project_id: Optional[int] = None
+
+
+class ArenaRunIn(BaseModel):
+    language: str = Field(default="Python", pattern="^(Python|Java|C\\+\\+|HTML/CSS/JS)$")
+    code: str = Field(max_length=35000)
+    stdin: str = Field(default="", max_length=5000)
+    mode: str = Field(default="auto", pattern="^(auto|console|gui)$")
+    gui_target: str = Field(default="auto", pattern="^(auto|turtle|tkinter|pygame|web|none)$")
+    project_id: Optional[int] = None
+    timeout: Optional[float] = Field(default=8.0, ge=1.0, le=20.0)
+
+
+class ArenaValidateIn(BaseModel):
+    language: str = Field(default="Python")
+    code: str = Field(max_length=35000)
 
 
 def safe_name(name: str) -> str:
@@ -758,14 +779,249 @@ def execute_in_docker(language: str, code: str, stdin: str) -> tuple[str, str, i
 @app.post("/api/runs", status_code=201)
 def run_code(payload: RunIn, db: Session = Depends(get_db)):
     if payload.language == "HTML/CSS/JS":
-        return {"status": "preview_only", "output": "HTML/CSS/JavaScript is previewed in the browser sandbox. Use the Preview control in the editor.", "duration_ms": 0, "executed": False}
+        return {
+            "status": "preview_only",
+            "output": "HTML/CSS/JavaScript is previewed in the browser sandbox. Use the Preview control in the editor.",
+            "duration_ms": 0,
+            "executed": False,
+            "mode": "gui",
+            "gui_target": "web",
+            "gui_payload": {"type": "web", "html": payload.code}
+        }
     if payload.project_id is not None and not db.get(Project, payload.project_id):
         raise HTTPException(status_code=404, detail="Project not found")
+
+    target = detect_arena_target(payload.code, payload.language)
+    is_gui = target in {"turtle", "tkinter", "pygame"} or (payload.gui_target and payload.gui_target != "none" and payload.gui_target != "auto")
+
+    # If code is Python GUI or Docker is unavailable, use the sandboxed Arena executor
+    docker = shutil.which("docker")
+    use_arena_fallback = payload.language == "Python" and (is_gui or not docker)
+
+    if use_arena_fallback:
+        res = execute_arena_code(
+            code=payload.code,
+            language=payload.language,
+            mode=payload.mode or "auto",
+            gui_target=payload.gui_target or "auto",
+            stdin_input=payload.stdin
+        )
+        rec = RunRecord(project_id=payload.project_id, language=payload.language, status=res["status"], output=res["output"][:15000], duration_ms=res["duration_ms"])
+        db.add(rec); db.commit(); db.refresh(rec)
+        return {
+            "id": rec.id,
+            "status": res["status"],
+            "output": res["output"],
+            "stdout": res["stdout"],
+            "stderr": res["stderr"],
+            "duration_ms": res["duration_ms"],
+            "executed": res["executed"],
+            "mode": res["mode"],
+            "gui_target": res["gui_target"],
+            "gui_payload": res["gui_payload"],
+            "created_at": rec.created_at.isoformat() + "Z"
+        }
+
     status, output, duration = execute_in_docker(payload.language, payload.code, payload.stdin)
     rec = RunRecord(project_id=payload.project_id, language=payload.language, status=status, output=output[:15000], duration_ms=duration)
     db.add(rec); db.commit(); db.refresh(rec)
-    return {"id": rec.id, "status": status, "output": output, "duration_ms": duration,
-            "executed": status in {"succeeded", "failed", "timeout", "error"}, "created_at": rec.created_at.isoformat() + "Z"}
+    return {
+        "id": rec.id,
+        "status": status,
+        "output": output,
+        "duration_ms": duration,
+        "executed": status in {"succeeded", "failed", "timeout", "error"},
+        "mode": "console",
+        "gui_target": "none",
+        "gui_payload": None,
+        "created_at": rec.created_at.isoformat() + "Z"
+    }
+
+
+@app.post("/api/arena/run", status_code=201)
+def run_arena(payload: ArenaRunIn, db: Session = Depends(get_db)):
+    """Run code in the coding arena with full console and graphical telemetry (Turtle, Tkinter, Pygame, Web)."""
+    if payload.project_id is not None and not db.get(Project, payload.project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    target = detect_arena_target(payload.code, payload.language) if payload.gui_target == "auto" else payload.gui_target
+    docker = shutil.which("docker")
+
+    # Native Java/C++ execution via Docker if present
+    if payload.language in {"Java", "C++"}:
+        if docker:
+            status, output, duration = execute_in_docker(payload.language, payload.code, payload.stdin)
+            rec = RunRecord(project_id=payload.project_id, language=payload.language, status=status, output=output[:15000], duration_ms=duration)
+            db.add(rec); db.commit(); db.refresh(rec)
+            return {
+                "id": rec.id,
+                "status": status,
+                "mode": "console",
+                "gui_target": "none",
+                "output": output,
+                "stdout": output if status == "succeeded" else "",
+                "stderr": output if status != "succeeded" else "",
+                "duration_ms": duration,
+                "executed": status in {"succeeded", "failed", "timeout", "error"},
+                "gui_payload": None,
+                "created_at": rec.created_at.isoformat() + "Z"
+            }
+        else:
+            return {
+                "id": 0,
+                "status": "unavailable",
+                "mode": "console",
+                "gui_target": "none",
+                "output": f"Native {payload.language} execution requires Docker runner image. Install Docker and follow README to build 'codingal-runner:local'.",
+                "stdout": "",
+                "stderr": "Runner container not configured.",
+                "duration_ms": 0,
+                "executed": False,
+                "gui_payload": None,
+                "created_at": utcnow().isoformat() + "Z"
+            }
+
+    # Python & Web via Arena Engine (Console, Turtle, Tkinter, Pygame, HTML/CSS/JS)
+    res = execute_arena_code(
+        code=payload.code,
+        language=payload.language,
+        mode=payload.mode,
+        gui_target=target,
+        stdin_input=payload.stdin,
+        timeout_sec=payload.timeout or 8.0
+    )
+
+    rec = RunRecord(project_id=payload.project_id, language=payload.language, status=res["status"], output=res["output"][:15000], duration_ms=res["duration_ms"])
+    db.add(rec); db.commit(); db.refresh(rec)
+
+    return {
+        "id": rec.id,
+        "status": res["status"],
+        "mode": res["mode"],
+        "gui_target": res["gui_target"],
+        "output": res["output"],
+        "stdout": res["stdout"],
+        "stderr": res["stderr"],
+        "duration_ms": res["duration_ms"],
+        "executed": res["executed"],
+        "gui_payload": res["gui_payload"],
+        "created_at": rec.created_at.isoformat() + "Z"
+    }
+
+
+@app.get("/api/arena/capabilities")
+def get_arena_capabilities():
+    """Return arena execution capabilities, supported GUI engines, and standalone editor recommendations."""
+    docker = shutil.which("docker")
+    docker_ready = False
+    if docker:
+        try:
+            inspect = subprocess.run([docker, "image", "inspect", RUNNER_IMAGE], capture_output=True, text=True, timeout=2)
+            docker_ready = (inspect.returncode == 0)
+        except Exception:
+            docker_ready = False
+
+    return {
+        "languages": ["Python", "Java", "C++", "HTML/CSS/JS"],
+        "modes": ["console", "gui"],
+        "gui_targets": [
+            {
+                "id": "turtle",
+                "name": "Python Turtle Graphics",
+                "icon": "🐢",
+                "description": "Step-by-step vector drawing animation, speed slider, coordinates grid, and image export."
+            },
+            {
+                "id": "tkinter",
+                "name": "Tkinter Desktop GUI",
+                "icon": "🪟",
+                "description": "Interactive simulated desktop window frame with reactive buttons, entries, labels, and callback events."
+            },
+            {
+                "id": "pygame",
+                "name": "Pygame 2D Engine",
+                "icon": "🎮",
+                "description": "60 FPS HTML5 game canvas with keyboard controls (Arrow keys, WASD), draw primitives, and game loop."
+            },
+            {
+                "id": "web",
+                "name": "Web HTML/CSS/JS Sandbox",
+                "icon": "🌐",
+                "description": "Sandboxed browser iframe preview with isolated script execution."
+            }
+        ],
+        "runner_backends": {
+            "arena_virtual_engine": "active",
+            "docker_runner": "ready" if docker_ready else ("docker_installed_image_missing" if docker else "not_installed"),
+            "client_browser_sandbox": "active"
+        },
+        "limits": {
+            "max_code_size_bytes": 35000,
+            "max_stdin_bytes": 5000,
+            "execution_timeout_seconds": 10,
+            "max_output_chars": 15000
+        },
+        "standalone_editors": [
+            {
+                "name": "CodeMirror 6",
+                "type": "In-Browser Web Editor",
+                "best_for": "Top recommendation for K-12. Lightweight (<120 KB), accessible, and outstanding mobile/iPad/Chromebook touch support.",
+                "sandboxing": "Minimal attack surface, pure functional state/dispatch architecture."
+            },
+            {
+                "name": "Monaco Editor",
+                "type": "In-Browser Web Editor",
+                "best_for": "Top recommendation for Secondary & Pro learners. VS Code engine with built-in IntelliSense and multi-file projects.",
+                "sandboxing": "Runs tokenization and language workers in isolated Web Workers."
+            },
+            {
+                "name": "Pyodide / Skulpt",
+                "type": "Client-Side In-Browser Runtime",
+                "best_for": "Zero backend server cost. Runs 100% in browser Web Workers for Python, Turtle, and Pygame-CE.",
+                "sandboxing": "Enclosed within browser WebAssembly and iframe security boundaries."
+            },
+            {
+                "name": "Judge0 / Piston",
+                "type": "Backend Execution Sandbox",
+                "best_for": "Production backend container execution with Linux cgroups, seccomp, and 60+ language runtimes.",
+                "sandboxing": "System-level isolation, dropped capabilities, no network, and ephemeral scratch spaces."
+            }
+        ]
+    }
+
+
+@app.get("/api/arena/templates")
+def get_arena_templates():
+    """Return curated starter templates for the coding arena."""
+    return {
+        "items": list(ARENA_TEMPLATES.values()),
+        "categories": ["Console", "Turtle Graphics", "Tkinter GUI", "Pygame 2D", "Web Sandboxed"]
+    }
+
+
+@app.post("/api/arena/validate")
+def validate_arena_code(payload: ArenaValidateIn):
+    """Perform pre-execution syntax and safety validation."""
+    target = detect_arena_target(payload.code, payload.language)
+    errors = []
+    warnings = []
+    if payload.language == "Python":
+        try:
+            tree = ast.parse(payload.code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "sleep":
+                    if node.args and isinstance(node.args[0], ast.Constant) and (isinstance(node.args[0].value, (int, float)) and node.args[0].value > 5):
+                        warnings.append({"line": node.lineno, "msg": "time.sleep() with high duration may cause execution timeout."})
+        except SyntaxError as e:
+            errors.append({"line": e.lineno, "column": e.offset, "msg": e.msg, "text": e.text.strip() if e.text else ""})
+
+    return {
+        "valid": len(errors) == 0,
+        "language": payload.language,
+        "detected_target": target,
+        "errors": errors,
+        "warnings": warnings
+    }
 
 
 @app.get("/api/runs")

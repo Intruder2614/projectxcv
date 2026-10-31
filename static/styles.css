@@ -5,3 +5,53 @@
 @media(max-width:900px){.sidebar{transform:translateX(-100%);transition:transform .2s;box-shadow:none}.sidebar.mobile-open{transform:translateX(0);box-shadow:15px 0 40px #2026351f}.main-column{margin-left:0;width:100%}.mobile-menu{display:grid}.topbar{gap:10px;padding:0 17px}.breadcrumbs{margin-right:auto}.page-content{padding:20px 16px}.app-footer{padding:12px 16px}.content-grid,.content-grid.equal{grid-template-columns:1fr}.collab-layout{grid-template-columns:1fr}.collab-layout .followup-list{grid-template-columns:repeat(2,minmax(0,1fr))}.note-detail{min-height:unset}.workspace-layout{grid-template-columns:1fr}.workspace-side{grid-template-columns:repeat(2,minmax(0,1fr))}.assignment-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:580px){.page-heading{display:block}.heading-actions{margin-top:13px}.page-heading h1{font-size:24px}.metric-grid{gap:8px}.metric-card{padding:12px}.metric-value{font-size:25px;margin:9px 0 6px}.metric-label{font-size:9px}.metric-icon{width:25px;height:25px}.overview-banner{align-items:flex-start;padding:13px}.banner-actions{display:none}.banner-left p{font-size:10px}.collab-layout .followup-list{grid-template-columns:1fr}.workspace-side{grid-template-columns:1fr}.assignment-grid{grid-template-columns:1fr}.profile-layout{grid-template-columns:1fr}.profile-metrics{gap:6px}.profile-metric{padding:9px}.profile-metric strong{font-size:18px}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.topbar-right{gap:8px}.demo-chip{font-size:9px;padding:4px 6px}.app-footer{flex-wrap:wrap}.app-footer span:nth-child(2){order:3;flex-basis:100%}.note-meta-grid{grid-template-columns:1fr 1fr}.editor-toolbar{align-items:flex-start}.editor-toolbar-left,.editor-toolbar-right{width:100%}.editor-toolbar-right{justify-content:flex-end}.code-editor{min-height:300px}.bar-chart{gap:5px;padding:0 2px}.bar-x{font-size:8px}.concept-row{grid-template-columns:84px minmax(60px,1fr) 29px;gap:7px}.chart-wrap{height:165px}.profile-button{margin-top:3px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition:none!important}}
+
+
+/* Coding Arena Output Tabs & Split View */
+.output-head-tabs { display: flex; align-items: center; gap: 4px; }
+.output-tab { background: transparent; border: 1px solid transparent; border-bottom: 0; color: #8c93a0; padding: 6px 12px; border-radius: 6px 6px 0 0; font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 6px; transition: all .15s; }
+.output-tab:hover { color: #fff; background: #252a36; }
+.output-tab.active { background: #171a21; color: #fff; border-color: #343945; border-bottom: 1px solid #171a21; }
+.gui-dot { width: 7px; height: 7px; border-radius: 50%; background: #777d87; display: inline-block; }
+.gui-dot.active { background: var(--coral); box-shadow: 0 0 8px var(--coral); }
+
+/* Stdin Bar */
+.stdin-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #1d212b; border-bottom: 1px solid #2a2f3d; }
+.stdin-label { font-size: 10px; font-weight: 800; color: #f45b4f; letter-spacing: .06em; white-space: nowrap; }
+.stdin-bar input { flex: 1; background: #12141a; border: 1px solid #373d4d; border-radius: 5px; color: #f0f2f5; padding: 5px 9px; font-size: 11px; font-family: 'SFMono-Regular', Consolas, monospace; }
+.stdin-bar input:focus { border-color: #f45b4f; }
+
+/* GUI Viewport */
+.gui-viewport { background: #12141a; min-height: 380px; display: flex; flex-direction: column; }
+.gui-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: #1a1e27; border-bottom: 1px solid #272c38; flex-wrap: wrap; }
+.gui-toolbar-left, .gui-toolbar-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gui-badge { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 5px; background: #252a36; color: #ff9d94; display: flex; align-items: center; gap: 5px; }
+.gui-canvas-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px; background: #0f1117; overflow: auto; position: relative; min-height: 320px; }
+.arena-canvas { background: #171a22; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 100%; height: auto; display: block; }
+
+/* Tkinter Desktop Window Emulator */
+.tkinter-window { width: min(100%, 440px); min-height: 280px; background: #ffffff; color: #22242a; border-radius: 9px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid #d5d8de; display: flex; flex-direction: column; }
+.tkinter-head { height: 32px; background: #f1f2f5; border-bottom: 1px solid #e1e4e8; display: flex; align-items: center; padding: 0 10px; gap: 8px; user-select: none; }
+.tkinter-dots { display: flex; gap: 6px; }
+.tkinter-dot { width: 10px; height: 10px; border-radius: 50%; }
+.tkinter-dot.red { background: #ff5f56; }
+.tkinter-dot.yellow { background: #ffbd2e; }
+.tkinter-dot.green { background: #27c93f; }
+.tkinter-title { flex: 1; text-align: center; font-size: 11px; font-weight: 700; color: #4a505b; margin-right: 36px; }
+.tkinter-body { padding: 18px; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px; background: #fafbfc; }
+.tkinter-widget { max-width: 100%; }
+.tkinter-btn { background: #f45b4f; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; transition: transform .1s, opacity .15s; }
+.tkinter-btn:hover { opacity: .92; transform: translateY(-1px); }
+.tkinter-btn:active { transform: translateY(1px); }
+.tkinter-entry { border: 1px solid #d0d4dc; border-radius: 5px; padding: 7px 10px; font-size: 12px; background: #fff; color: #222; }
+.tkinter-label { font-size: 13px; color: #2b2f38; }
+.tkinter-log { width: 100%; margin-top: 10px; padding: 8px 10px; background: #f0f2f5; border-radius: 5px; font-size: 10px; font-family: monospace; color: #555; max-height: 80px; overflow-y: auto; }
+
+/* Standalone Editor Cards in Modal */
+.editor-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 12px; }
+.editor-table th, .editor-table td { padding: 9px 11px; border: 1px solid #eff0f3; text-align: left; }
+.editor-table th { background: #f9fafb; font-weight: 750; color: #4a505b; }
+.editor-card { border: 1px solid #e8eaee; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; background: #fff; }
+.editor-card h4 { margin: 0 0 4px; font-size: 13px; display: flex; align-items: center; justify-content: space-between; }
+.editor-card p { font-size: 11px; color: #606672; line-height: 1.5; margin: 0 0 6px; }
+.editor-badge { font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 4px; background: #eef3ff; color: #2b55a8; }

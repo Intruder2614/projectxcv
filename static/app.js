@@ -4,9 +4,15 @@ const state = {
   page: "overview", overview: null, students: [], assignments: [], notes: [], projects: [], versions: [],
   selectedNoteId: null, currentProjectId: null, currentFile: "main.py", currentLanguage: "Python",
   studentFilter: "all", studentSearch: "", noteFilter: "all", assignmentFilter: "all", editorTimer: null,
-  currentStudent: null, pageLoading: false
+  currentStudent: null, pageLoading: false,
+  arenaTab: "console", hasGui: false, latestRun: null,
+  consoleOutput: "Ready. Run the current program to inspect output and errors.",
+  stdinValue: "", arenaTemplates: [],
+  turtleState: { speed: 2, currentStep: 0, animId: null, isPlaying: false, showGrid: false },
+  pygameState: { animId: null, isPlaying: false, frame: 0, keys: {}, ball: null, paddle: null },
+  tkinterState: { count: 0, greeting: "", logs: [] }
 };
-const pageNames = {overview:"Overview",learners:"Learner intelligence",insights:"Class insights",collaboration:"Teacher collaboration",assignments:"Assignments",workspace:"Code workspace",versions:"Version history"};
+const pageNames = {overview:"Overview",learners:"Learner intelligence",insights:"Class insights",collaboration:"Teacher collaboration",assignments:"Assignments",workspace:"Coding arena",versions:"Version history"};
 const starterFiles = {
   "Python": {"main.py": '# A small change can be a big learning moment.\nname = "Coder"\nprint(f"Hello, {name}!")\nprint("Welcome to Codingal Code Studio.")\n'},
   "Java": {"Main.java": 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, Codingal!");\n        System.out.println("One step at a time.");\n    }\n}\n'},
@@ -104,16 +110,710 @@ function renderAssignments(){const items=state.assignments.filter(a=>state.assig
 <div class="assignment-grid">${items.map(a=>`<section class="card assignment-card"><div class="assignment-card-top"><div class="assignment-icon">${iconForLanguage(a.language)}</div><div style="flex:1;min-width:0"><h3>${esc(a.title)}</h3><p>${esc(a.description||'No instructions added.')}</p></div>${statusTag(a.status)}</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"><span class="tag">${esc(a.language)}</span><span class="tag">${esc(a.class_name)}</span><span class="tag">Due ${esc(a.due_date||'not set')}</span></div><div class="assignment-progress"><div class="assignment-progress-label"><strong>${a.completion}% submitted</strong><span>${a.submission_count} of ${a.student_count} learners</span></div><div class="progress-track"><div class="progress-fill ${a.completion>=80?'good':''}" style="width:${a.completion}%"></div></div></div><div class="assignment-card-footer"><small>${a.average_score===null?'No scored submissions':`Average score ${a.average_score}%`} · Created ${prettyDate(a.created_at)}</small><div style="display:flex;gap:5px">${a.status==='active'?`<button class="btn btn-sm" data-action="assignment-status" data-id="${a.id}" data-status="review">Review</button>`:''}${a.status!=='archived'?`<button class="btn btn-sm" data-action="assignment-status" data-id="${a.id}" data-status="archived">Archive</button>`:`<button class="btn btn-sm" data-action="assignment-status" data-id="${a.id}" data-status="active">Restore</button>`}</div></div>${a.submissions?.length?`<details style="margin-top:12px"><summary style="font-size:10px;color:#d34d42;cursor:pointer;font-weight:700">Review submissions (${a.submissions.length})</summary><div class="table-wrap" style="margin-top:10px"><table class="data-table" style="min-width:350px"><thead><tr><th>Learner</th><th>Score</th><th>Status</th></tr></thead><tbody>${a.submissions.map(s=>`<tr><td>${esc(s.student)}</td><td>${s.score}%</td><td>${statusTag(s.status)}</td></tr>`).join('')}</tbody></table></div></details>`:''}</section>`).join('')||`<section class="card empty-state" style="grid-column:1/-1"><div class="empty-icon">☷</div><h3>No assignments in this filter</h3><p>Create a task or select a different status filter.</p><button class="btn btn-primary" data-action="new-assignment">Create assignment</button></section>`}</div>
 <p class="data-footnote">Assignment records and submission summaries are persisted in the local database. Live student submission capture and rubric-based grading need a production identity and classroom integration.</p>`;}
 
-async function loadWorkspace(){state.projects=(await api('/api/projects')).items;if(!state.projects.length){const p=await api('/api/projects',{method:'POST',body:{title:'Loops & Patterns Lab',language:'Python',class_name:'Python Foundations'}});state.projects=[p];}if(!state.currentProjectId||!state.projects.some(p=>p.id===state.currentProjectId))state.currentProjectId=state.projects[0].id;const proj=state.projects.find(p=>p.id===state.currentProjectId);state.currentLanguage=proj.language;const files=(await api(`/api/projects/${proj.id}/files`)).items;if(!files.some(f=>f.name===state.currentFile))state.currentFile=files[0]?.name||Object.keys(starterFiles[state.currentLanguage]||{})[0];state.projectFiles=files;}
-async function loadEditorFile(name){state.currentFile=name;const data=await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(name)}`);const e=$("#codeEditor");if(e)e.value=data.content;const status=$("#saveStatus");if(status)status.textContent='Saved to local project';$$('.editor-tab').forEach(b=>b.classList.toggle('active',b.dataset.file===name));$$('.file-row').forEach(b=>b.classList.toggle('active',b.dataset.file===name));const fname=$("#editorFilename");if(fname)fname.textContent=name;}
-async function renderWorkspace(){const projects=state.projects||[];const current=projects.find(p=>p.id===state.currentProjectId)||projects[0];const fileData=await api(`/api/projects/${current.id}/files/${encodeURIComponent(state.currentFile)}`).catch(async()=>{const f=state.projectFiles?.[0];if(f){state.currentFile=f.name;return api(`/api/projects/${current.id}/files/${encodeURIComponent(f.name)}`)}return {name:'main.py',content:''}});state.currentFile=fileData.name;const isWeb=state.currentLanguage==='HTML/CSS/JS';$("#app").innerHTML=`${heading("The coding workbench.","Keep the editor simple. Make the learning, review, and project history persistent around it.",`<button class="btn" data-action="new-project">＋ New project</button><button class="btn btn-primary" data-action="commit">⎇ Save version</button>`)}
-<div class="integration-notice" style="margin-bottom:13px"><strong>Local pilot:</strong> project files and Git history are stored on this machine. Python, Java and C++ execution requires the isolated Docker runner image; if it is not installed, Run will explain the setup and will not execute code on the host. HTML runs only in a sandboxed browser preview.</div>
-<div class="workspace-layout"><section class="editor-shell"><div class="editor-toolbar"><div class="editor-toolbar-left"><select id="projectSelect" aria-label="Choose project">${projects.map(p=>`<option value="${p.id}" ${p.id===current.id?'selected':''}>${esc(p.title)}</option>`).join('')}</select><select id="languageSelect" aria-label="Choose language">${['Python','Java','C++','HTML/CSS/JS'].map(l=>`<option ${l===state.currentLanguage?'selected':''}>${l}</option>`).join('')}</select></div><div class="editor-toolbar-right"><button class="btn" data-action="save-file">Save file</button><button class="btn btn-primary" data-action="run-code">▶ Run</button></div></div><div class="editor-tabs" id="editorTabs">${(state.projectFiles||[]).map(f=>`<button class="editor-tab ${f.name===state.currentFile?'active':''}" data-action="open-file" data-file="${esc(f.name)}">${esc(f.name)}</button>`).join('')}<button class="editor-tab" data-action="new-file">＋ File</button></div><textarea class="code-editor" id="codeEditor" aria-label="Code editor" spellcheck="false">${esc(fileData.content)}</textarea><div class="editor-footer"><span id="saveStatus">Saved to local project</span><span>${esc(state.currentLanguage)} · UTF-8 · Spaces: 4</span><span>Git-backed</span></div><section class="output-panel"><div class="output-head"><span>▸ Output / Preview</span><div style="display:flex;align-items:center;gap:8px"><span id="runDuration" class="soft-label" style="color:#a0a7b2"></span><button class="btn btn-sm" data-action="clear-output">Clear</button></div></div><div class="output-body" id="runOutput"><span class="muted">Ready. Run the current program to inspect output and errors.</span></div></section></section>
-<aside class="workspace-side"><section class="card side-card"><div class="card-heading"><h3>Project files</h3><span class="tag">${(state.projectFiles||[]).length} files</span></div><div class="file-list">${(state.projectFiles||[]).map(f=>`<button class="file-row ${f.name===state.currentFile?'active':''}" data-action="open-file" data-file="${esc(f.name)}"><span>${f.name.endsWith('.py')?'🐍':f.name.endsWith('.java')?'☕':f.name.endsWith('.cpp')?'⚙':f.name.endsWith('.html')?'◈':'▤'}</span>${esc(f.name)}<span>${f.size} B</span></button>`).join('')}<button class="file-row" data-action="new-file"><span>＋</span>Add file…</button></div></section><section class="card side-card"><div class="card-heading"><h3>Project details</h3></div><div class="side-detail"><span>Language</span><strong>${esc(current.language)}</strong></div><div class="side-detail"><span>Class</span><strong>${esc(current.class_name)}</strong></div><div class="side-detail"><span>Owner</span><strong>${esc(state.students.find(s=>s.id===current.owner_student_id)?.name||'Teacher workspace')}</strong></div><div class="side-detail"><span>Updated</span><strong>${prettyDate(current.updated_at)}</strong></div><button class="btn btn-sm" style="width:100%;margin-top:12px" data-page="versions">View Git history →</button></section><section class="callout"><span>ⓘ</span><div><strong>Work should be reviewable.</strong>Use a named version before a milestone, then link the project to an assignment in a future production integration.</div></section></aside></div>
-<p class="data-footnote">This workspace uses local Git repositories and server-side file persistence. The local runner is isolated with Docker resource and network limits, but this setup is a development/pilot control—not a substitute for a separately hardened production execution service.</p>`;
-const editor=$('#codeEditor');editor?.addEventListener('input',()=>{const el=$('#saveStatus');if(el)el.textContent='Unsaved changes';clearTimeout(state.editorTimer);state.editorTimer=setTimeout(()=>saveCurrentFile(true),900);});editor?.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const a=editor.selectionStart,b=editor.selectionEnd;editor.setRangeText('    ',a,b,'end');editor.dispatchEvent(new Event('input'));}});}
-async function saveCurrentFile(silent=false){const editor=$('#codeEditor');if(!editor)return;try{await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(state.currentFile)}`,{method:'PUT',body:{content:editor.value}});const status=$('#saveStatus');if(status)status.textContent='Saved to local project';if(!silent)toast('File saved to the local project.','success');return true;}catch(e){toast(`Save failed: ${e.message}`,'error');return false;}}
-async function runCurrentCode(){const editor=$('#codeEditor');if(!editor)return;await saveCurrentFile(true);const output=$('#runOutput');const duration=$('#runDuration');const language=state.currentLanguage;const code=editor.value;if(language==='HTML/CSS/JS'){output.innerHTML='';const iframe=document.createElement('iframe');iframe.className='preview-frame';iframe.setAttribute('sandbox','allow-scripts');iframe.title='Sandboxed web project preview';iframe.srcdoc=code;output.appendChild(iframe);duration.textContent='Browser sandbox';toast('HTML preview rendered in a sandboxed iframe.','success');return;}output.textContent='Starting isolated execution…';duration.textContent='Queued';try{const result=await api('/api/runs',{method:'POST',body:{language,code,project_id:state.currentProjectId}});output.textContent=result.output||'(No output)';duration.textContent=result.duration_ms?`${result.duration_ms} ms`:result.status==='unavailable'?'Runner not configured':result.status;if(result.status==='succeeded')toast('Program completed successfully.','success');else if(result.status==='unavailable')toast('Runner not configured — no code was executed.','error');else toast(`Execution ${result.status}.`,'');}catch(e){output.textContent=e.message;duration.textContent='Error';toast(`Run failed: ${e.message}`,'error');}}
+async function loadWorkspace(){
+  state.projects=(await api('/api/projects')).items;
+  if(!state.projects.length){
+    const p=await api('/api/projects',{method:'POST',body:{title:'Loops & Patterns Lab',language:'Python',class_name:'Python Foundations'}});
+    state.projects=[p];
+  }
+  if(!state.currentProjectId||!state.projects.some(p=>p.id===state.currentProjectId)) state.currentProjectId=state.projects[0].id;
+  const proj=state.projects.find(p=>p.id===state.currentProjectId);
+  state.currentLanguage=proj.language;
+  const files=(await api(`/api/projects/${proj.id}/files`)).items;
+  if(!files.some(f=>f.name===state.currentFile)) state.currentFile=files[0]?.name||Object.keys(starterFiles[state.currentLanguage]||{})[0];
+  state.projectFiles=files;
+  if(!state.arenaTemplates?.length){
+    try{
+      const tmpl = await api('/api/arena/templates');
+      state.arenaTemplates = tmpl.items || [];
+    }catch(e){ state.arenaTemplates = []; }
+  }
+}
+
+async function loadEditorFile(name){
+  state.currentFile=name;
+  const data=await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(name)}`);
+  const e=$("#codeEditor");
+  if(e)e.value=data.content;
+  const status=$("#saveStatus");
+  if(status)status.textContent='Saved to local project';
+  $$('.editor-tab').forEach(b=>b.classList.toggle('active',b.dataset.file===name));
+  $$('.file-row').forEach(b=>b.classList.toggle('active',b.dataset.file===name));
+  const fname=$("#editorFilename");
+  if(fname)fname.textContent=name;
+}
+
+function stopActiveAnimations(){
+  if(state.turtleState.animId){ cancelAnimationFrame(state.turtleState.animId); state.turtleState.animId=null; }
+  state.turtleState.isPlaying=false;
+  if(state.pygameState.animId){ cancelAnimationFrame(state.pygameState.animId); state.pygameState.animId=null; }
+  state.pygameState.isPlaying=false;
+  if(state.pygameKeyHandler){
+    window.removeEventListener('keydown', state.pygameKeyHandler);
+    window.removeEventListener('keyup', state.pygameKeyUpHandler);
+    state.pygameKeyHandler = null;
+    state.pygameKeyUpHandler = null;
+  }
+}
+
+function renderArenaTabContent(){
+  if(state.arenaTab==='console'){
+    return `
+      <div class="stdin-bar">
+        <span class="stdin-label">STDIN ▸</span>
+        <input id="stdinInput" value="${esc(state.stdinValue||'')}" placeholder="Type input for program (e.g. for input())...">
+        <button class="btn btn-sm" type="button" data-action="send-stdin">Send & Run</button>
+      </div>
+      <div id="runOutput" style="white-space:pre-wrap;font-family:'SFMono-Regular',Consolas,monospace;padding:14px 16px;color:#d5d9e2;font-size:12px;line-height:1.6;overflow-y:auto;max-height:360px">${esc(state.consoleOutput||'Ready. Run the current program to inspect output and errors.')}</div>
+    `;
+  } else {
+    return `<div id="guiViewportRoot" class="gui-viewport">${renderGuiViewportContent()}</div>`;
+  }
+}
+
+function renderGuiViewportContent(){
+  const run = state.latestRun;
+  const payload = run?.gui_payload;
+  if(!payload){
+    return `
+      <div class="empty-state" style="padding:48px 16px;background:#12141a;color:#858b95">
+        <div class="empty-icon" style="background:#1e222c;color:#f45b4f">❖</div>
+        <h3 style="color:#f0f2f6">No visual output generated yet</h3>
+        <p style="color:#9298a4">Run code using <strong>Turtle</strong>, <strong>Tkinter</strong>, or <strong>Pygame</strong>, or select a starter template from the dropdown above to view live graphics here.</p>
+        <button class="btn btn-primary" data-action="load-template-sample">Load Turtle Spiral Star</button>
+      </div>
+    `;
+  }
+
+  if(payload.type==='turtle'){
+    const w = payload.width || 600;
+    const h = payload.height || 420;
+    return `
+      <div class="gui-toolbar">
+        <div class="gui-toolbar-left">
+          <span class="gui-badge">🐢 Turtle Canvas</span>
+          <button class="btn btn-sm" id="btnTurtlePlay" data-action="turtle-toggle">${state.turtleState.isPlaying?'⏸ Pause':'▶ Play'}</button>
+          <button class="btn btn-sm" data-action="turtle-instant">Instant view</button>
+          <select id="turtleSpeed" class="pill-select" style="padding:4px 7px;font-size:10px">
+            <option value="1" ${state.turtleState.speed===1?'selected':''}>Speed: 0.5x</option>
+            <option value="2" ${state.turtleState.speed===2?'selected':''}>Speed: 1x</option>
+            <option value="5" ${state.turtleState.speed===5?'selected':''}>Speed: 2x</option>
+            <option value="15" ${state.turtleState.speed===15?'selected':''}>Speed: 5x</option>
+            <option value="999" ${state.turtleState.speed===999?'selected':''}>Instant</option>
+          </select>
+          <button class="btn btn-sm" data-action="turtle-grid">${state.turtleState.showGrid?'Hide grid':'Show grid'}</button>
+        </div>
+        <div class="gui-toolbar-right">
+          <span class="soft-label" id="turtleStepLabel">${(payload.actions||[]).length} steps</span>
+          <button class="btn btn-sm" data-action="turtle-reset">↺ Reset</button>
+          <button class="btn btn-sm" data-action="turtle-export">📥 PNG</button>
+        </div>
+      </div>
+      <div class="gui-canvas-container">
+        <canvas id="turtleCanvas" class="arena-canvas" width="${w}" height="${h}"></canvas>
+      </div>
+    `;
+  }
+
+  if(payload.type==='tkinter'){
+    const title = payload.title || "Tkinter Application";
+    const w = Math.min(payload.width || 380, 480);
+    const h = payload.height || 280;
+    return `
+      <div class="gui-toolbar">
+        <div class="gui-toolbar-left">
+          <span class="gui-badge">🪟 Tkinter Desktop GUI</span>
+          <span class="soft-label">${(payload.widgets||[]).length} widgets · Reactive state</span>
+        </div>
+        <div class="gui-toolbar-right">
+          <button class="btn btn-sm" data-action="tkinter-reset">↺ Reset app</button>
+        </div>
+      </div>
+      <div class="gui-canvas-container" style="padding:28px 16px">
+        <div class="tkinter-window" style="max-width:${w}px">
+          <div class="tkinter-head">
+            <div class="tkinter-dots"><span class="tkinter-dot red"></span><span class="tkinter-dot yellow"></span><span class="tkinter-dot green"></span></div>
+            <span class="tkinter-title">${esc(title)}</span>
+          </div>
+          <div class="tkinter-body" id="tkinterBody">
+            ${renderTkinterWidgets(payload.widgets||[])}
+            <div class="tkinter-log" id="tkinterLog">
+              <div>[Tkinter Ready] Window initialized (${w}x${h})</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if(payload.type==='pygame'){
+    const w = payload.width || 480;
+    const h = payload.height || 320;
+    return `
+      <div class="gui-toolbar">
+        <div class="gui-toolbar-left">
+          <span class="gui-badge">🎮 Pygame 2D Engine</span>
+          <button class="btn btn-sm" id="btnPygamePlay" data-action="pygame-toggle">${state.pygameState.isPlaying?'⏸ Pause':'▶ Play'}</button>
+          <button class="btn btn-sm" data-action="pygame-restart">↺ Restart</button>
+          <span class="soft-label" style="color:#3cb775">● 60 FPS</span>
+        </div>
+        <div class="gui-toolbar-right">
+          <span class="soft-label">⌨ Controls: ← → / A D or Space</span>
+        </div>
+      </div>
+      <div class="gui-canvas-container">
+        <canvas id="pygameCanvas" class="arena-canvas" width="${w}" height="${h}"></canvas>
+      </div>
+    `;
+  }
+
+  if(payload.type==='web'){
+    return `
+      <div class="gui-toolbar">
+        <div class="gui-toolbar-left"><span class="gui-badge">🌐 Sandboxed Web Preview</span></div>
+      </div>
+      <div style="padding:14px;background:#12141a">
+        <iframe class="preview-frame" sandbox="allow-scripts" title="Web Sandbox" srcdoc="${esc(payload.html||'')}"></iframe>
+      </div>
+    `;
+  }
+
+  return `<div class="empty-state"><p>Unknown visual GUI format.</p></div>`;
+}
+
+function renderTkinterWidgets(widgets){
+  if(!widgets.length) return `<p class="muted">No widgets created in this window.</p>`;
+  return widgets.map(w => {
+    const p = w.props || {};
+    if(w.type === 'label'){
+      const isHeader = (p.font && String(p.font).includes('bold')) || (p.font && String(p.font).includes('16'));
+      return `<div class="tkinter-widget tkinter-label" id="${w.id}" style="color:${esc(p.fg||'#222')};${isHeader?'font-size:16px;font-weight:bold;':''}">${esc(p.text||'')}</div>`;
+    }
+    if(w.type === 'button'){
+      return `<button class="tkinter-btn" id="${w.id}" data-action="tkinter-btn-click" data-cmd="${esc(p.command_name||'')}" style="${p.bg?`background:${esc(p.bg)};`:''}${p.fg?`color:${esc(p.fg)};`:''}">${esc(p.text||'Button')}</button>`;
+    }
+    if(w.type === 'entry'){
+      return `<input class="tkinter-entry" id="${w.id}" placeholder="${esc(p.placeholder||'Type here...')}" value="${esc(p.text||'')}">`;
+    }
+    if(w.type === 'frame'){
+      return `<div class="tkinter-widget" id="${w.id}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>`;
+    }
+    if(w.type === 'canvas'){
+      return `<canvas id="${w.id}" width="${p.width||300}" height="${p.height||150}" style="background:${esc(p.bg||'#f0f2f5')};border-radius:6px"></canvas>`;
+    }
+    return `<div class="tkinter-widget" id="${w.id}">${esc(p.text||w.type)}</div>`;
+  }).join('');
+}
+
+function setupTurtlePlayback(payload){
+  const canvas = $('#turtleCanvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const actions = payload.actions || [];
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2, cy = h / 2;
+
+  state.turtleState.currentStep = 0;
+  state.turtleState.isPlaying = true;
+
+  function toX(x){ return cx + x; }
+  function toY(y){ return cy - y; }
+
+  function renderFrame(){
+    // Draw background
+    ctx.fillStyle = payload.bg_color || '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+
+    // Draw Grid if enabled
+    if(state.turtleState.showGrid){
+      ctx.strokeStyle = payload.bg_color && payload.bg_color.startsWith('#1') ? '#2e3444' : '#e6e9ef';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, cy); ctx.lineTo(w, cy);
+      ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    let headX = 0, headY = 0, headAngle = 0, headColor = '#f45b4f', headVisible = true;
+
+    // Draw executed actions
+    const max = Math.min(state.turtleState.currentStep, actions.length);
+    for(let i=0; i<max; i++){
+      const act = actions[i];
+      if(act.cmd === 'line'){
+        ctx.strokeStyle = act.color || '#f45b4f';
+        ctx.lineWidth = act.width || 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(toX(act.from[0]), toY(act.from[1]));
+        ctx.lineTo(toX(act.to[0]), toY(act.to[1]));
+        ctx.stroke();
+        headX = act.to[0]; headY = act.to[1];
+        headColor = act.color || headColor;
+      } else if(act.cmd === 'fill_poly' && act.points){
+        ctx.fillStyle = act.fillcolor || '#f45b4f';
+        ctx.beginPath();
+        act.points.forEach((pt, idx) => {
+          if(idx===0) ctx.moveTo(toX(pt[0]), toY(pt[1]));
+          else ctx.lineTo(toX(pt[0]), toY(pt[1]));
+        });
+        ctx.closePath();
+        ctx.fill();
+        if(act.width){
+          ctx.strokeStyle = act.pencolor || '#f45b4f';
+          ctx.lineWidth = act.width;
+          ctx.stroke();
+        }
+      } else if(act.cmd === 'dot'){
+        ctx.fillStyle = act.color || '#f45b4f';
+        ctx.beginPath();
+        ctx.arc(toX(act.x), toY(act.y), act.radius || 3, 0, Math.PI*2);
+        ctx.fill();
+        headX = act.x; headY = act.y;
+      } else if(act.cmd === 'write'){
+        ctx.fillStyle = act.color || '#f45b4f';
+        ctx.font = act.font || '12px Arial';
+        ctx.fillText(act.text, toX(act.x), toY(act.y));
+      } else if(act.cmd === 'heading'){
+        headAngle = act.angle;
+      }
+    }
+
+    // Draw Turtle Cursor
+    if(headVisible){
+      ctx.save();
+      ctx.translate(toX(headX), toY(headY));
+      ctx.rotate(-headAngle * Math.PI / 180);
+      ctx.fillStyle = headColor;
+      ctx.beginPath();
+      ctx.moveTo(9, 0);
+      ctx.lineTo(-6, -6);
+      ctx.lineTo(-3, 0);
+      ctx.lineTo(-6, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    const stepLabel = $('#turtleStepLabel');
+    if(stepLabel) stepLabel.textContent = `${max} / ${actions.length} steps`;
+
+    if(state.turtleState.isPlaying && state.turtleState.currentStep < actions.length){
+      state.turtleState.currentStep = Math.min(actions.length, state.turtleState.currentStep + (state.turtleState.speed || 2));
+      state.turtleState.animId = requestAnimationFrame(renderFrame);
+    } else {
+      state.turtleState.isPlaying = false;
+      const btn = $('#btnTurtlePlay');
+      if(btn) btn.textContent = '▶ Replay';
+    }
+  }
+
+  stopActiveAnimations();
+  state.turtleState.animId = requestAnimationFrame(renderFrame);
+
+  $('#turtleSpeed')?.addEventListener('change', e => {
+    state.turtleState.speed = Number(e.target.value);
+    if(!state.turtleState.isPlaying && state.turtleState.currentStep < actions.length){
+      state.turtleState.isPlaying = true;
+      state.turtleState.animId = requestAnimationFrame(renderFrame);
+    }
+  });
+}
+
+function setupTkinterInteractivity(payload){
+  state.tkinterState = { count: 0, greeting: "", logs: [] };
+  const logEl = $('#tkinterLog');
+  const countLabel = $$('.tkinter-label').find(el => el.textContent.includes('Points:') || el.textContent.includes('Score:'));
+  const statusLabel = $$('.tkinter-label').find(el => el.textContent === '');
+  const nameInput = $('.tkinter-entry');
+
+  $$('.tkinter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = btn.textContent.trim();
+      let logMsg = `Clicked '${text}'`;
+
+      if(text.includes('Add') || text.includes('Increment')){
+        state.tkinterState.count++;
+        if(countLabel) countLabel.textContent = `Points: ${state.tkinterState.count}`;
+        logMsg = `[Event] Button '${text}' clicked -> Points: ${state.tkinterState.count}`;
+      } else if(text.includes('Reset')){
+        state.tkinterState.count = 0;
+        if(countLabel) countLabel.textContent = `Points: 0`;
+        logMsg = `[Event] Button '${text}' clicked -> Points reset to 0`;
+      } else if(text.includes('Submit') || text.includes('Hello') || text.includes('Greet')){
+        const val = nameInput?.value || "Learner";
+        const msg = `Awesome coding, ${val}!`;
+        if(statusLabel) statusLabel.textContent = msg;
+        logMsg = `[Event] Greeting submitted -> '${msg}'`;
+      }
+
+      if(logEl){
+        const row = document.createElement('div');
+        row.textContent = `[${new Date().toLocaleTimeString()}] ${logMsg}`;
+        logEl.appendChild(row);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      state.consoleOutput += `\n${logMsg}`;
+    });
+  });
+}
+
+function setupPygameEngine(payload){
+  const canvas = $('#pygameCanvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+
+  // Initialize Game State
+  const stateGame = {
+    paddleX: w / 2 - 45,
+    paddleY: h - 30,
+    paddleW: 90,
+    paddleH: 12,
+    ballX: w / 2,
+    ballY: 80,
+    dx: 3.5,
+    dy: 3.0,
+    radius: 12,
+    score: 0,
+    keys: {}
+  };
+
+  stopActiveAnimations();
+  state.pygameState.isPlaying = true;
+
+  state.pygameKeyHandler = e => {
+    if(['ArrowLeft','ArrowRight','KeyA','KeyD','Space'].includes(e.code)) e.preventDefault();
+    stateGame.keys[e.code] = true;
+  };
+  state.pygameKeyUpHandler = e => { stateGame.keys[e.code] = false; };
+  window.addEventListener('keydown', state.pygameKeyHandler);
+  window.addEventListener('keyup', state.pygameKeyUpHandler);
+
+  function gameLoop(){
+    // Controls update
+    if(stateGame.keys['ArrowLeft'] || stateGame.keys['KeyA']) stateGame.paddleX = Math.max(10, stateGame.paddleX - 6);
+    if(stateGame.keys['ArrowRight'] || stateGame.keys['KeyD']) stateGame.paddleX = Math.min(w - stateGame.paddleW - 10, stateGame.paddleX + 6);
+
+    // Ball physics
+    stateGame.ballX += stateGame.dx;
+    stateGame.ballY += stateGame.dy;
+
+    // Boundary bounces
+    if(stateGame.ballX <= stateGame.radius + 10 || stateGame.ballX >= w - stateGame.radius - 10) stateGame.dx = -stateGame.dx;
+    if(stateGame.ballY <= stateGame.radius + 10) stateGame.dy = -stateGame.dy;
+
+    // Paddle bounce
+    if(stateGame.ballY >= stateGame.paddleY - stateGame.radius &&
+       stateGame.ballX >= stateGame.paddleX - 4 &&
+       stateGame.ballX <= stateGame.paddleX + stateGame.paddleW + 4 &&
+       stateGame.dy > 0){
+      stateGame.dy = -stateGame.dy;
+      stateGame.score++;
+    } else if(stateGame.ballY >= h - stateGame.radius){
+      // Reset ball
+      stateGame.ballX = w / 2;
+      stateGame.ballY = 80;
+      stateGame.dy = Math.abs(stateGame.dy);
+    }
+
+    // Render 60 FPS
+    ctx.fillStyle = '#171a22';
+    ctx.fillRect(0, 0, w, h);
+
+    // Border
+    ctx.strokeStyle = '#3c74c9';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, w - 20, h - 20);
+
+    // Paddle
+    ctx.fillStyle = '#29945b';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(stateGame.paddleX, stateGame.paddleY, stateGame.paddleW, stateGame.paddleH, 4) : ctx.rect(stateGame.paddleX, stateGame.paddleY, stateGame.paddleW, stateGame.paddleH);
+    ctx.fill();
+
+    // Ball
+    ctx.fillStyle = '#f45b4f';
+    ctx.beginPath();
+    ctx.arc(stateGame.ballX, stateGame.ballY, stateGame.radius, 0, Math.PI*2);
+    ctx.fill();
+
+    // Score HUD
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`Score: ${stateGame.score}`, 24, 32);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#8e96a4';
+    ctx.fillText('Move paddle: [← / →] or [A / D]', w - 180, 32);
+
+    if(state.pygameState.isPlaying){
+      state.pygameState.animId = requestAnimationFrame(gameLoop);
+    }
+  }
+
+  state.pygameState.animId = requestAnimationFrame(gameLoop);
+}
+
+function attachArenaOutputHandlers(){
+  const run = state.latestRun;
+  if(state.arenaTab === 'gui' && run?.gui_payload){
+    if(run.gui_payload.type === 'turtle') setupTurtlePlayback(run.gui_payload);
+    else if(run.gui_payload.type === 'tkinter') setupTkinterInteractivity(run.gui_payload);
+    else if(run.gui_payload.type === 'pygame') setupPygameEngine(run.gui_payload);
+  }
+}
+
+function renderWorkspaceOutput(){
+  const container = $('#arenaOutputContainer');
+  if(!container) return;
+  container.innerHTML = renderArenaTabContent();
+  attachArenaOutputHandlers();
+  $$('.output-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.arenaTab));
+  const dot = $('.gui-dot');
+  if(dot) dot.classList.toggle('active', state.hasGui);
+}
+
+function showEditorsModal(){
+  openModal('Standalone Sandboxed Editors & Runtimes','Evaluation and architecture guide for Codingal Code Studio',`
+    <div style="display:grid;gap:12px">
+      <div class="editor-card">
+        <h4><span>1. CodeMirror 6</span><span class="editor-badge" style="background:#e6f8ee;color:#1e7e48">Top Pick for K-12</span></h4>
+        <p><strong>Why it fits Codingal:</strong> Ultra-lightweight (&lt;120 KB), loads in milliseconds on low-end school Chromebooks and weak Wi-Fi. Native touch handling makes it unbeatable for elementary and middle school students coding on iPads and tablets.</p>
+        <p><strong>Sandboxing:</strong> Minimal attack surface, pure functional state/dispatch architecture with zero external binary dependencies.</p>
+      </div>
+
+      <div class="editor-card">
+        <h4><span>2. Monaco Editor (VS Code Engine)</span><span class="editor-badge">Top Pick for Secondary & Pro</span></h4>
+        <p><strong>Why it fits Codingal:</strong> The exact same editor engine that powers VS Code. Provides built-in IntelliSense, AST inspection, syntax tree, minimap, and multi-file diffing.</p>
+        <p><strong>Sandboxing:</strong> Tokenization and language services run inside isolated Web Workers, preventing editor freeze during large script parsing.</p>
+      </div>
+
+      <div class="editor-card">
+        <h4><span>3. In-Browser Sandboxed Runtimes (Pyodide & Skulpt)</span><span class="editor-badge" style="background:#fff4e5;color:#9b5e14">Zero Server Cost</span></h4>
+        <p><strong>Pyodide (WebAssembly CPython):</strong> Runs standard CPython 3, NumPy, and Pygame-CE 100% inside the browser Web Worker. Eliminates backend container costs and latency.</p>
+        <p><strong>Skulpt:</strong> The educational gold-standard (powers Trinket, Repl.it, Runestone) for Python Turtle graphics and canvas animations.</p>
+      </div>
+
+      <div class="editor-card">
+        <h4><span>4. Production Backend Sandboxes (Judge0 & Piston)</span><span class="editor-badge" style="background:#f2edff;color:#6b46c1">Backend Fleet</span></h4>
+        <p><strong>Judge0 / Piston:</strong> Battle-tested multi-language execution engines with Linux cgroups, seccomp filters, dropped capabilities, and strict CPU/memory timeouts. Ideal backend when students run native Java, C++, and Go.</p>
+        <p><strong>gVisor (runsc) / Firecracker:</strong> Production hypervisor and syscall isolation layers for untrusted multi-tenant code execution.</p>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:10px">
+      <span>ⓘ</span>
+      <div><strong>Current Architecture:</strong> This pilot uses a hybrid model: lightweight client-side 60 FPS Turtle, Tkinter, Pygame, and Web preview canvases, backed by isolated subprocess / Docker runners on the server.</div>
+    </div>
+  `,`<button class="btn btn-primary" data-action="close-modal">Got it</button>`);
+}
+
+async function renderWorkspace(){
+  const projects=state.projects||[];
+  const current=projects.find(p=>p.id===state.currentProjectId)||projects[0];
+  const fileData=await api(`/api/projects/${current.id}/files/${encodeURIComponent(state.currentFile)}`).catch(async()=>{
+    const f=state.projectFiles?.[0];
+    if(f){state.currentFile=f.name;return api(`/api/projects/${current.id}/files/${encodeURIComponent(f.name)}`)}
+    return {name:'main.py',content:''};
+  });
+  state.currentFile=fileData.name;
+  const templates=state.arenaTemplates||[];
+
+  $("#app").innerHTML=`${heading("The Coding Arena.","Write, debug, and run console programs or rich visual graphics (Turtle, Tkinter, Pygame, Canvas).",`
+    <button class="btn" data-action="show-editors">✦ Standalone Editors</button>
+    <button class="btn" data-action="new-project">＋ New project</button>
+    <button class="btn btn-primary" data-action="commit">⎇ Save version</button>
+  `)}
+  <div class="integration-notice" style="margin-bottom:13px">
+    <strong>Coding Arena:</strong> Interactive graphics (Turtle, Tkinter, Pygame) and standard Console execute in isolated sandboxes. Native Java and C++ use the optional Docker runner.
+  </div>
+  <div class="workspace-layout">
+    <section class="editor-shell">
+      <div class="editor-toolbar">
+        <div class="editor-toolbar-left">
+          <select id="projectSelect" aria-label="Choose project">
+            ${projects.map(p=>`<option value="${p.id}" ${p.id===current.id?'selected':''}>${esc(p.title)}</option>`).join('')}
+          </select>
+          <select id="languageSelect" aria-label="Choose language">
+            ${['Python','Java','C++','HTML/CSS/JS'].map(l=>`<option ${l===state.currentLanguage?'selected':''}>${l}</option>`).join('')}
+          </select>
+          <select id="arenaTemplateSelect" class="pill-select" aria-label="Load starter template">
+            <option value="">✦ Starter templates…</option>
+            ${templates.map(t=>`<option value="${t.id}">${t.icon} ${esc(t.title)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="editor-toolbar-right">
+          <button class="btn" data-action="save-file">Save file</button>
+          <button class="btn btn-primary" data-action="run-code">▶ Run</button>
+        </div>
+      </div>
+      <div class="editor-tabs" id="editorTabs">
+        ${(state.projectFiles||[]).map(f=>`<button class="editor-tab ${f.name===state.currentFile?'active':''}" data-action="open-file" data-file="${esc(f.name)}">${esc(f.name)}</button>`).join('')}
+        <button class="editor-tab" data-action="new-file">＋ File</button>
+      </div>
+      <textarea class="code-editor" id="codeEditor" aria-label="Code editor" spellcheck="false">${esc(fileData.content)}</textarea>
+      <div class="editor-footer">
+        <span id="saveStatus">Saved to local project</span>
+        <span>${esc(state.currentLanguage)} · UTF-8 · Spaces: 4</span>
+        <span>Git-backed</span>
+      </div>
+      <section class="output-panel">
+        <div class="output-head">
+          <div class="output-head-tabs">
+            <button class="output-tab ${state.arenaTab==='console'?'active':''}" data-action="switch-tab" data-tab="console">▤ Console</button>
+            <button class="output-tab ${state.arenaTab==='gui'?'active':''}" data-action="switch-tab" data-tab="gui">
+              ❖ GUI / Graphics <span class="gui-dot ${state.hasGui?'active':''}"></span>
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="runDuration" class="soft-label" style="color:#a0a7b2">${state.latestRun?.duration_ms ? `${state.latestRun.duration_ms} ms` : ''}</span>
+            <button class="btn btn-sm" data-action="clear-output">Clear</button>
+          </div>
+        </div>
+        <div class="output-body" id="arenaOutputContainer">
+          ${renderArenaTabContent()}
+        </div>
+      </section>
+    </section>
+    <aside class="workspace-side">
+      <section class="card side-card">
+        <div class="card-heading"><h3>Project files</h3><span class="tag">${(state.projectFiles||[]).length} files</span></div>
+        <div class="file-list">
+          ${(state.projectFiles||[]).map(f=>`<button class="file-row ${f.name===state.currentFile?'active':''}" data-action="open-file" data-file="${esc(f.name)}"><span>${f.name.endsWith('.py')?'🐍':f.name.endsWith('.java')?'☕':f.name.endsWith('.cpp')?'⚙':f.name.endsWith('.html')?'◈':'▤'}</span>${esc(f.name)}<span>${f.size} B</span></button>`).join('')}
+          <button class="file-row" data-action="new-file"><span>＋</span>Add file…</button>
+        </div>
+      </section>
+      <section class="card side-card">
+        <div class="card-heading"><h3>Project details</h3></div>
+        <div class="side-detail"><span>Language</span><strong>${esc(current.language)}</strong></div>
+        <div class="side-detail"><span>Class</span><strong>${esc(current.class_name)}</strong></div>
+        <div class="side-detail"><span>Owner</span><strong>${esc(state.students.find(s=>s.id===current.owner_student_id)?.name||'Teacher workspace')}</strong></div>
+        <div class="side-detail"><span>Updated</span><strong>${prettyDate(current.updated_at)}</strong></div>
+        <button class="btn btn-sm" style="width:100%;margin-top:12px" data-page="versions">View Git history →</button>
+      </section>
+      <section class="card side-card">
+        <div class="card-heading"><h3>Arena capabilities</h3></div>
+        <div class="side-detail"><span>Console I/O</span><strong>Active (Stdin/Stdout)</strong></div>
+        <div class="side-detail"><span>Turtle Canvas</span><strong>Vector Animator</strong></div>
+        <div class="side-detail"><span>Tkinter GUI</span><strong>Simulated Reactive</strong></div>
+        <div class="side-detail"><span>Pygame 2D</span><strong>60 FPS Game Loop</strong></div>
+        <button class="btn btn-sm" style="width:100%;margin-top:12px" data-action="show-editors">Compare Standalone Editors →</button>
+      </section>
+      <section class="callout">
+        <span>ⓘ</span>
+        <div><strong>Safe execution</strong>Console outputs and GUI interactions run safely isolated. Toggle tabs anytime to inspect terminal logs or graphics.</div>
+      </section>
+    </aside>
+  </div>
+  <p class="data-footnote">The Coding Arena provides interactive execution with console and visual graphics telemetry. Git repository checkpointing records versions non-destructively.</p>`;
+
+  const editor=$('#codeEditor');
+  editor?.addEventListener('input',()=>{
+    const el=$('#saveStatus');
+    if(el)el.textContent='Unsaved changes';
+    clearTimeout(state.editorTimer);
+    state.editorTimer=setTimeout(()=>saveCurrentFile(true),900);
+  });
+  editor?.addEventListener('keydown',e=>{
+    if(e.key==='Tab'){
+      e.preventDefault();
+      const a=editor.selectionStart,b=editor.selectionEnd;
+      editor.setRangeText('    ',a,b,'end');
+      editor.dispatchEvent(new Event('input'));
+    }
+  });
+
+  attachArenaOutputHandlers();
+}
+
+async function saveCurrentFile(silent=false){
+  const editor=$('#codeEditor');
+  if(!editor)return;
+  try{
+    await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(state.currentFile)}`,{method:'PUT',body:{content:editor.value}});
+    const status=$('#saveStatus');
+    if(status)status.textContent='Saved to local project';
+    if(!silent)toast('File saved to the local project.','success');
+    return true;
+  }catch(e){
+    toast(`Save failed: ${e.message}`,'error');
+    return false;
+  }
+}
+
+async function runCurrentCode(){
+  const editor=$('#codeEditor');
+  if(!editor)return;
+  await saveCurrentFile(true);
+  const duration=$('#runDuration');
+  const language=state.currentLanguage;
+  const code=editor.value;
+  const stdinVal=$('#stdinInput')?.value || state.stdinValue || '';
+
+  if(language==='HTML/CSS/JS'){
+    state.hasGui = true;
+    state.latestRun = {
+      status: "succeeded",
+      mode: "gui",
+      gui_target: "web",
+      gui_payload: { type: "web", html: code },
+      output: "HTML preview rendered in sandboxed iframe.",
+      duration_ms: 0
+    };
+    state.consoleOutput = "HTML/CSS/JS preview rendered in sandboxed browser iframe.";
+    state.arenaTab = "gui";
+    renderWorkspaceOutput();
+    if(duration) duration.textContent = 'Browser sandbox';
+    toast('HTML preview rendered in sandboxed iframe.','success');
+    return;
+  }
+
+  stopActiveAnimations();
+  state.consoleOutput = 'Starting isolated execution in Coding Arena…';
+  if(duration) duration.textContent = 'Queued…';
+  renderWorkspaceOutput();
+
+  try{
+    const result = await api('/api/arena/run',{
+      method:'POST',
+      body:{
+        language,
+        code,
+        stdin: stdinVal,
+        project_id: state.currentProjectId,
+        mode: "auto",
+        gui_target: "auto"
+      }
+    });
+
+    state.latestRun = result;
+    state.consoleOutput = result.output || result.stdout || (result.status === 'succeeded' ? 'Program completed with no output.' : 'Execution failed.');
+
+    if(result.gui_payload){
+      state.hasGui = true;
+      state.arenaTab = 'gui';
+    }
+
+    if(duration) duration.textContent = result.duration_ms ? `${result.duration_ms} ms` : (result.status === 'unavailable' ? 'Runner not configured' : result.status);
+
+    renderWorkspaceOutput();
+
+    if(result.status==='succeeded'){
+      const modeLabel = result.gui_target && result.gui_target !== 'none' ? ` (${result.gui_target.toUpperCase()})` : '';
+      toast(`Program completed successfully${modeLabel}.`,'success');
+    } else if(result.status==='unavailable'){
+      toast('Runner container not configured for this language.','error');
+    } else {
+      toast(`Execution ${result.status}.`,'');
+    }
+  }catch(e){
+    state.consoleOutput = `Error: ${e.message}`;
+    if(duration) duration.textContent = 'Error';
+    renderWorkspaceOutput();
+    toast(`Run failed: ${e.message}`,'error');
+  }
+}
 async function renderVersions(){const project=state.projects.find(p=>p.id===state.currentProjectId)||state.projects[0];const data=await api(`/api/projects/${project.id}/versions`);state.versions=data.items;$("#app").innerHTML=`${heading("Every meaningful change, recoverable.","Git-backed commit history for the selected local project. Restores are recorded as new commits so prior history stays available.",`<button class="btn" data-page="workspace">← Back to workspace</button><button class="btn btn-primary" data-action="commit">⎇ Save version</button>`)}
 <section class="card card-pad"><div class="card-heading"><div><h3>${esc(project.title)}</h3><p>${esc(project.language)} · ${esc(project.class_name)}</p></div><span class="tag purple">Git repository</span></div>${state.versions.length?`<div class="versions-list">${state.versions.map(v=>`<div class="version-row"><div class="version-glyph">⎇</div><div><strong>${esc(v.message)}</strong><small>${esc(v.author)} · ${prettyDate(v.date)} · ${esc(v.date?.replace('T',' ').replace('Z','')||'')}</small></div><div style="display:flex;align-items:center;gap:9px"><span class="hash">${esc(v.short_hash)}</span><button class="btn btn-sm" data-action="restore-version" data-hash="${esc(v.hash)}">Restore</button></div></div>`).join('')}</div>`:`<div class="empty-state"><div class="empty-icon">⎇</div><h3>No versions yet</h3><p>Save a version in the workspace to create the first checkpoint.</p><button class="btn btn-primary" data-page="workspace">Open workspace</button></div>`}</section><div class="callout" style="margin-top:13px"><span>ⓘ</span><div><strong>Safe restore behaviour</strong>Restoring a commit copies its project tree into the current working branch and creates a new commit; it does not hard-reset or erase later commit history.</div></div>`;}
 
@@ -151,14 +851,119 @@ if(action==='commit'){await saveCurrentFile(true);const message=prompt('Name thi
 if(action==='open-file'){await saveCurrentFile(true);await loadEditorFile(el.dataset.file);return;}
 if(action==='new-file'){const filename=prompt('New file name (letters, numbers, dots, hyphens and underscores):','notes.txt');if(filename===null)return;if(!/^[A-Za-z0-9_.-]{1,80}$/.test(filename)||filename.startsWith('.')||filename==='.git'||filename==='..'){toast('That filename is not allowed.','error');return;}await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(filename)}`,{method:'PUT',body:{content:''}});await loadWorkspace();renderWorkspace();await loadEditorFile(filename);toast('File added to the project.','success');return;}
 if(action==='run-code'){await runCurrentCode();return;}
-if(action==='clear-output'){const out=$('#runOutput');if(out)out.innerHTML='<span class="muted">Output cleared. Run the program to populate this panel.</span>';const duration=$('#runDuration');if(duration)duration.textContent='';return;}
+if(action==='switch-tab'){state.arenaTab=el.dataset.tab;renderWorkspaceOutput();return;}
+if(action==='show-editors'){showEditorsModal();return;}
+if(action==='send-stdin'){state.stdinValue=$('#stdinInput')?.value||'';await runCurrentCode();return;}
+if(action==='load-template-sample'){
+  const tmpl=(state.arenaTemplates||[]).find(t=>t.id==='python_turtle_star')||state.arenaTemplates?.[1];
+  if(tmpl){
+    const ed=$('#codeEditor');if(ed)ed.value=tmpl.code;
+    state.currentLanguage=tmpl.language;
+    const lSel=$('#languageSelect');if(lSel)lSel.value=tmpl.language;
+    await saveCurrentFile(true);
+    await runCurrentCode();
+  }
+  return;
+}
+if(action==='turtle-toggle'){
+  state.turtleState.isPlaying=!state.turtleState.isPlaying;
+  const btn=$('#btnTurtlePlay');
+  if(btn)btn.textContent=state.turtleState.isPlaying?'⏸ Pause':'▶ Play';
+  if(state.turtleState.isPlaying && state.latestRun?.gui_payload){
+    setupTurtlePlayback(state.latestRun.gui_payload);
+  }
+  return;
+}
+if(action==='turtle-instant'){
+  state.turtleState.speed=999;
+  if(state.latestRun?.gui_payload){
+    setupTurtlePlayback(state.latestRun.gui_payload);
+  }
+  return;
+}
+if(action==='turtle-grid'){
+  state.turtleState.showGrid=!state.turtleState.showGrid;
+  el.textContent=state.turtleState.showGrid?'Hide grid':'Show grid';
+  if(state.latestRun?.gui_payload){
+    setupTurtlePlayback(state.latestRun.gui_payload);
+  }
+  return;
+}
+if(action==='turtle-reset'){
+  if(state.latestRun?.gui_payload){
+    state.turtleState.currentStep=0;
+    setupTurtlePlayback(state.latestRun.gui_payload);
+  }
+  return;
+}
+if(action==='turtle-export'){
+  const c=$('#turtleCanvas');
+  if(c){
+    const a=document.createElement('a');
+    a.download='codingal-turtle-art.png';
+    a.href=c.toDataURL('image/png');
+    a.click();
+    toast('Turtle drawing exported as PNG.','success');
+  }
+  return;
+}
+if(action==='tkinter-reset'){
+  state.tkinterState={count:0,greeting:"",logs:[]};
+  if(state.latestRun?.gui_payload){
+    renderWorkspaceOutput();
+    toast('Tkinter application reset.','success');
+  }
+  return;
+}
+if(action==='pygame-toggle'){
+  state.pygameState.isPlaying=!state.pygameState.isPlaying;
+  const btn=$('#btnPygamePlay');
+  if(btn)btn.textContent=state.pygameState.isPlaying?'⏸ Pause':'▶ Play';
+  if(state.pygameState.isPlaying && state.latestRun?.gui_payload){
+    setupPygameEngine(state.latestRun.gui_payload);
+  }
+  return;
+}
+if(action==='pygame-restart'){
+  if(state.latestRun?.gui_payload){
+    setupPygameEngine(state.latestRun.gui_payload);
+    toast('Pygame game loop restarted.','success');
+  }
+  return;
+}
+if(action==='clear-output'){
+  stopActiveAnimations();
+  state.consoleOutput='Output cleared. Run the program to populate this panel.';
+  state.latestRun=null;
+  state.hasGui=false;
+  renderWorkspaceOutput();
+  const duration=$('#runDuration');if(duration)duration.textContent='';
+  return;
+}
 if(action==='restore-version'){if(!confirm('Restore this commit as a new commit? Later history will be preserved.'))return;await api(`/api/projects/${state.currentProjectId}/restore`,{method:'POST',body:{commit_hash:el.dataset.hash,author:'Priya Sharma'}});toast('Snapshot restored as a new Git commit.','success');await loadWorkspace();await renderVersions();return;}
 if(action==='help'){aboutModal();return;}
 }catch(err){toast(err.message||'Something went wrong.','error');}}
 function downloadText(filename,text,type){const blob=new Blob([text],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);}
 
 async function boot(){document.addEventListener('click',handleClick);$("#mobileMenu").addEventListener('click',()=>$("#sidebar").classList.toggle('mobile-open'));$("#helpButton").addEventListener('click',aboutModal);$("#profileButton").addEventListener('click',aboutModal);document.addEventListener('submit',async e=>{if(e.target.id==='commentForm'){e.preventDefault();const fd=new FormData(e.target);const body=String(fd.get('body')||'').trim();if(!body)return;await api(`/api/notes/${e.target.dataset.noteId}/comments`,{method:'POST',body:{author:'Priya Sharma',body}});state.notes=(await api(`/api/notes?status=${encodeURIComponent(state.noteFilter)}`)).items;toast('Comment added to the handoff.','success');renderCollaboration();}});
-$("#app").addEventListener('change',async e=>{if(e.target.id==='projectSelect'){await saveCurrentFile(true);state.currentProjectId=Number(e.target.value);const p=state.projects.find(x=>x.id===state.currentProjectId);state.currentLanguage=p.language;state.currentFile=Object.keys(starterFiles[p.language])[0];await navigate('workspace');}if(e.target.id==='languageSelect'){const lang=e.target.value;await saveCurrentFile(true);const filename=Object.keys(starterFiles[lang])[0];const existing=(await api(`/api/projects/${state.currentProjectId}/files`)).items;if(!existing.some(f=>f.name===filename)){await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(filename)}`,{method:'PUT',body:{content:starterFiles[lang][filename]}});}state.currentLanguage=lang;state.currentFile=filename;state.projectFiles=(await api(`/api/projects/${state.currentProjectId}/files`)).items;renderWorkspace();} });
+$("#app").addEventListener('change',async e=>{
+  if(e.target.id==='projectSelect'){await saveCurrentFile(true);state.currentProjectId=Number(e.target.value);const p=state.projects.find(x=>x.id===state.currentProjectId);state.currentLanguage=p.language;state.currentFile=Object.keys(starterFiles[p.language])[0];await navigate('workspace');}
+  if(e.target.id==='languageSelect'){const lang=e.target.value;await saveCurrentFile(true);const filename=Object.keys(starterFiles[lang])[0];const existing=(await api(`/api/projects/${state.currentProjectId}/files`)).items;if(!existing.some(f=>f.name===filename)){await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(filename)}`,{method:'PUT',body:{content:starterFiles[lang][filename]}});}state.currentLanguage=lang;state.currentFile=filename;state.projectFiles=(await api(`/api/projects/${state.currentProjectId}/files`)).items;renderWorkspace();}
+  if(e.target.id==='arenaTemplateSelect'){
+    const tmplId=e.target.value;
+    if(!tmplId)return;
+    const tmpl=(state.arenaTemplates||[]).find(t=>t.id===tmplId);
+    if(!tmpl)return;
+    const ed=$('#codeEditor');
+    if(ed)ed.value=tmpl.code;
+    state.currentLanguage=tmpl.language;
+    const lSel=$('#languageSelect');
+    if(lSel)lSel.value=tmpl.language;
+    await saveCurrentFile(true);
+    toast(`Loaded template: ${tmpl.title}`,'success');
+    await runCurrentCode();
+  }
+});
 try{const h=await api('/api/health');$('#serverStatus').textContent='API and database connected';$('#serverStatus').closest('.stack-status')?.querySelector('.status-led')?.style.setProperty('background','#3cb775');}catch(e){$('#serverStatus').textContent='Service unavailable';$('#serverStatus').closest('.stack-status')?.querySelector('.status-led')?.style.setProperty('background','#d24f4f');}
 await navigate('overview');}
 boot();

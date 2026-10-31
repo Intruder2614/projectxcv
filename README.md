@@ -11,7 +11,7 @@ A locally runnable standalone pilot focused on **actionable learner performance,
 - Class insights: surface areas for reteaching and review mastery movement with explainable, rule-based signals.
 - Teacher collaboration: create and assign follow-ups, set priority and target dates, keep discussion comments, and track open / in-progress / resolved status.
 - Assignments: create tasks, record due dates and learning objectives, monitor seeded submission summaries, archive or reopen assignments.
-- Code workspace: create projects, save files, switch starter languages, run HTML in a sandboxed iframe, and run Python/Java/C++ through an isolated local Docker container when configured.
+- Coding arena & workspace: create projects, save files, switch starter languages, run standard Console programs with interactive Stdin/Stdout, and run rich graphical GUI applications (Python Turtle graphics, Tkinter desktop windows, and 60 FPS Pygame 2D canvas) with instantaneous telemetry, plus sandboxed HTML/CSS/JS and isolated local Docker execution when configured.
 - Git version history: real local Git repositories, named commits, history listing, and a restore operation that records a new commit rather than wiping later history.
 - Persistence: SQLite by default. The data folder and Git repositories remain on the host machine between restarts.
 - Learner overview export: export the current learner table as CSV.
@@ -80,6 +80,12 @@ FastAPI/OpenAPI docs are available at `/docs`. Key routes:
 - `GET /api/projects/{id}/files`, `GET/PUT /api/projects/{id}/files/{filename}`
 - `POST /api/projects/{id}/commit`, `GET /api/projects/{id}/versions`, `POST /api/projects/{id}/restore`
 - `POST /api/runs`, `GET /api/runs`
+- `POST /api/arena/run` (execute console code or graphical runtimes: Turtle, Tkinter, Pygame, Web)
+- `GET /api/arena/capabilities` (inspect available sandbox engines, GUI targets, and editor recommendations)
+- `GET /api/arena/templates` (starter templates for Console, Turtle graphics, Tkinter GUI, Pygame 2D, Web)
+- `POST /api/arena/validate` (pre-flight AST syntax and safety checks)
+
+For a detailed analysis of standalone sandboxed editors (CodeMirror 6, Monaco Editor, Pyodide, Skulpt, Judge0, Piston), see [docs/SANDBOXED_EDITORS.md](file:///Users/reet/Downloads/codingal_code_studio/docs/SANDBOXED_EDITORS.md).
 
 ## Architecture decisions
 
